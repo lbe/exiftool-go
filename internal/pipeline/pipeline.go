@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/lbe/exiftool-go/internal/backend"
 	"github.com/lbe/exiftool-go/internal/db"
 	"github.com/lbe/exiftool-go/internal/exifutil"
 	"github.com/lbe/exiftool-go/internal/hasher"
@@ -43,8 +44,6 @@ func Run(ctx context.Context, dirs []string, dbPath string, workerCount int) err
 	defer database.Close()
 
 	runCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
 	fileCh := make(chan string, workerCount*2)
 	metaCh := make(chan meta.ImageMeta, workerCount*2)
 	errCh := make(chan error, 1)
@@ -66,17 +65,31 @@ func Run(ctx context.Context, dirs []string, dbPath string, workerCount int) err
 	}()
 
 	var workersWG sync.WaitGroup
-	for i := 0; i < workerCount; i++ {
+	for range workerCount {
 		workersWG.Add(1)
 		go func() {
 			defer workersWG.Done()
+
+			d := backend.NewDispatchDriver(backend.BackendWasm)
+			srv, err := d.NewServer()
+			if err != nil {
+				sendFirstError(errCh, fmt.Errorf("exiftool NewServer: %w", err))
+				cancel()
+				return
+			}
+			defer func() {
+				if shutErr := srv.Shutdown(); shutErr != nil {
+					slog.Debug("exiftool server shutdown", "error", shutErr)
+				}
+			}()
+
 			for path := range fileCh {
 				if runCtx.Err() != nil {
-					continue
+					return
 				}
 				slog.Debug("Run process file", "path", path)
 
-				m, processErr := processFile(path)
+				m, processErr := processFile(srv, path)
 				if processErr != nil {
 					sendFirstError(errCh, processErr)
 					cancel()
@@ -134,7 +147,7 @@ scanLoop:
 	return nil
 }
 
-func processFile(path string) (meta.ImageMeta, error) {
+func processFile(srv backend.Server, path string) (meta.ImageMeta, error) {
 	canonical, err := canonicalPath(path)
 	if err != nil {
 		return meta.ImageMeta{}, err
@@ -145,7 +158,7 @@ func processFile(path string) (meta.ImageMeta, error) {
 		return meta.ImageMeta{}, fmt.Errorf("hash file %q: %w", canonical, err)
 	}
 
-	rawEXIF, err := exifutil.Extract(canonical)
+	rawEXIF, err := exifutil.ExtractServer(srv, canonical)
 	if err != nil {
 		msg := err.Error()
 		return meta.ImageMeta{

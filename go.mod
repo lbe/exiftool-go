@@ -3,9 +3,10 @@ module github.com/lbe/exiftool-go
 go 1.26
 
 require (
-	github.com/lbe/go-exiftool-wasm v0.0.0-20260510204043-fd0c127412c9
+	github.com/lbe/go-exiftool-wasm v0.0.0-20260512043543-b197de7c1433
+	github.com/ncruces/go-exiftool v0.4.2
 	github.com/phsym/console-slog v0.3.1
-	modernc.org/sqlite v1.50.0
+	modernc.org/sqlite v1.50.1
 )
 
 require (

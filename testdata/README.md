@@ -34,37 +34,47 @@ Notes:
 	- Copyright: Exif uses Copyright, XMP uses Rights, IPTC/IIM uses Copyright Notice, and values differ.
 - This fixture is the source of truth for full structured-field assertions except Orientation, which is covered by synthetic mapper tests because no bundled image fixture currently exposes it.
 
-## Secondary EXIF Fixture
+## Secondary EXIF Fixtures (path diversity)
 
 ### with_exif/nested/another.jpg
 
-This is a narrower EXIF-positive fixture retained for recursion and nested-path coverage.
-
-Expected subset:
-
-- Camera Make: Nikon
-- Camera Model: D3500
-- DateTimeOriginal: 2021-06-15T08:00:00
-
-This fixture is not authoritative for GPS, dimensions, exposure, ISO, focal length, or orientation.
-
-## Legacy Placeholder Fixture
+Byte-for-byte copy of `testdata/images/jpeg/samsung_sm_g930p.jpg` (same Samsung SM-G930P metadata as the primary Commons fixture). Kept under a nested directory so scanner and pipeline tests exercise recursion and non-root paths.
 
 ### with_exif/photo.jpg
 
-This file remains a placeholder fixture with inline pseudo-EXIF tags. It is no longer the primary evidence for EXIF completeness.
+Same bytes as `samsung_sm_g930p.jpg` / `another.jpg` (Samsung SM-G930P). Used as a second shallow `with_exif/` path without implying a different camera body.
 
-Expected subset:
+### images/jpeg/samsung_sm_g930p_altpath.jpg
 
-- Camera Make: Canon
-- Camera Model: EOS 80D
-- DateTimeOriginal: 2022-01-01T12:34:56
+Same bytes as `samsung_sm_g930p.jpg`; lives under `testdata/images/jpeg/` for alternate relative-path coverage (replaces a former placeholder named `nikon_d3500.jpg`).
+
+## Phase G R8 mixed-format corpus fixtures
+
+### images/png/sample.png
+
+Byte-for-byte copy of tracked `testdata/sample.png`, added under `testdata/images/png/` for format/path corpus coverage.
+
+### images/tiff/sample.tiff
+
+Byte-for-byte copy of tracked `testdata/sample.tiff`, added under `testdata/images/tiff/` for format/path corpus coverage.
+
+### images/webp/sample.webp
+
+WebP conversion derived from tracked `testdata/sample.png` (same image content, transcoded for cross-format corpus coverage).
+
+### cli/argfiles/r8_mixed_formats.args
+
+Argfile fixture listing the three mixed-format corpus paths above for `-@` CLI scenario coverage.
+
+### Minimum JPEG camera diversity anchor
+
+`testdata/sample.jpg` provides a second camera signature (`TestMaker` / `TestModel`) distinct from Samsung SM-G930P fixtures and is used by R8 corpus checks to keep the minimum JPEG corpus diversity requirement explicit.
 
 ## Non-EXIF and Error Fixtures
 
 ### no_exif/blank.jpg
 
-- No EXIF data
+Minimal JPEG (`testdata/sample_noexif.jpg` copy) with no camera EXIF payload. Pipeline classifies as `no_exif` (no Make/Model in ExifTool JSON).
 
 ### not_image/readme.txt
 

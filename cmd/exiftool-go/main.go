@@ -2,15 +2,18 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
 
+	"github.com/lbe/exiftool-go/internal/backend"
 	"github.com/lbe/exiftool-go/internal/input"
 	"github.com/lbe/exiftool-go/internal/logging"
 	"github.com/lbe/exiftool-go/internal/pipeline"
@@ -28,18 +31,120 @@ type cliConfig struct {
 
 func main() {
 	if err := run(os.Args[1:], os.Stdin); err != nil {
+		var exitErr exitError
+		if errors.As(err, &exitErr) {
+			if len(exitErr.stderr) > 0 {
+				_, _ = os.Stderr.Write(exitErr.stderr)
+			}
+			os.Exit(exitErr.code)
+		}
 		_, _ = fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
+// exitError carries a subprocess exit code and optional stderr from passthrough mode.
+type exitError struct {
+	code   int
+	stderr []byte
+}
+
+func (e exitError) Error() string {
+	return fmt.Sprintf("exit status %d", e.code)
+}
+
 func run(args []string, stdin *os.File) error {
 	slog.Debug("run enter", "args_count", len(args))
 
-	cfg, err := parseFlags(args)
+	if len(args) == 1 && (args[0] == "--help" || args[0] == "-help") {
+		_, _ = fmt.Fprint(os.Stdout, globalUsage(workersDefault()))
+		return nil
+	}
+	if len(args) == 1 && args[0] == "--version" {
+		_, _ = fmt.Fprintln(os.Stdout, "exiftool-go (development build)")
+		return nil
+	}
+
+	rest, backendKind, err := backend.StripLeadingBackendFlags(args)
 	if err != nil {
 		return err
 	}
+
+	if len(rest) >= 1 && rest[0] == "pipeline" {
+		cfg, err := parseFlags(rest[1:])
+		if err != nil {
+			return err
+		}
+		return runIngest(cfg, stdin)
+	}
+
+	if isLegacyPipelineInvocation(rest) {
+		cfg, err := parseFlags(rest)
+		if err != nil {
+			return err
+		}
+		return runIngest(cfg, stdin)
+	}
+
+	return runForward(context.Background(), stdin, rest, backendKind)
+}
+
+func workersDefault() int {
+	n := runtime.NumCPU()
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+// isLegacyPipelineInvocation reports argv that uses only ingest flags (-l,
+// --log-level, -w, --workers) plus positional directory arguments (plan §7 D).
+func isLegacyPipelineInvocation(args []string) bool {
+	for i := 0; i < len(args); {
+		arg := args[i]
+		if !strings.HasPrefix(arg, "-") {
+			i++
+			continue
+		}
+		switch {
+		case arg == "-l" || arg == "--log-level":
+			if i+1 >= len(args) {
+				return false
+			}
+			i += 2
+		case strings.HasPrefix(arg, "--log-level="):
+			i++
+		case arg == "-w" || arg == "--workers":
+			if i+1 >= len(args) {
+				return false
+			}
+			i += 2
+		case strings.HasPrefix(arg, "--workers="):
+			i++
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func runForward(ctx context.Context, stdin io.Reader, args []string, kind backend.BackendKind) error {
+	d := backend.NewDispatchDriver(kind)
+	out, err := d.CommandContext(ctx, stdin, args...)
+	if _, werr := os.Stdout.Write(out); werr != nil {
+		return werr
+	}
+	if err == nil {
+		return nil
+	}
+	var ee *exec.ExitError
+	if errors.As(err, &ee) {
+		return exitError{code: ee.ExitCode(), stderr: ee.Stderr}
+	}
+	return err
+}
+
+func runIngest(cfg cliConfig, stdin *os.File) error {
 	if setupErr := logging.Setup(cfg.logLevel); setupErr != nil {
 		return setupErr
 	}
@@ -57,8 +162,7 @@ func run(args []string, stdin *os.File) error {
 
 	slog.Info("application started", "dirs", dirs, "log_level", cfg.logLevel, "workers", cfg.workers)
 
-	err = pipeline.Run(context.Background(), dirs, dbPath, cfg.workers)
-	if err != nil {
+	if err := pipeline.Run(context.Background(), dirs, dbPath, cfg.workers); err != nil {
 		return err
 	}
 
@@ -69,20 +173,17 @@ func run(args []string, stdin *os.File) error {
 func parseFlags(args []string) (cliConfig, error) {
 	slog.Debug("parseFlags enter", "args_count", len(args))
 
-	workersDefault := runtime.NumCPU()
-	if workersDefault < 1 {
-		workersDefault = 1
-	}
+	wd := workersDefault()
 
 	flagSet := flag.NewFlagSet("exiftool-go", flag.ContinueOnError)
 	flagSet.SetOutput(io.Discard)
 
 	shortLevel := flagSet.String("l", defaultLogLevel, "log level")
 	longLevel := flagSet.String("log-level", "", "log level")
-	shortWorkers := flagSet.Int("w", workersDefault, "worker count")
+	shortWorkers := flagSet.Int("w", wd, "worker count")
 	longWorkers := flagSet.Int("workers", 0, "worker count")
 	flagSet.Usage = func() {
-		_, _ = fmt.Fprintln(flagSet.Output(), usageMessage(workersDefault))
+		_, _ = fmt.Fprintln(flagSet.Output(), usageMessage(wd))
 	}
 
 	if err := flagSet.Parse(args); err != nil {
@@ -115,5 +216,16 @@ func normalizeLevel(value string) string {
 }
 
 func usageMessage(defaultWorkers int) string {
-	return fmt.Sprintf("usage: exiftool-go [-l LEVEL|--log-level LEVEL] [-w N|--workers N] [DIR ...]\n  LEVEL: DEBUG, INFO, WARN, ERROR (default: %s)\n  N: worker count >= 1 (default: %d)", defaultLogLevel, defaultWorkers)
+	return fmt.Sprintf("usage: exiftool-go [-l LEVEL|--log-level LEVEL] [-w N|--workers N] [DIR ...]\n       exiftool-go pipeline [same flags] [DIR ...]\n  LEVEL: DEBUG, INFO, WARN, ERROR (default: %s)\n  N: worker count >= 1 (default: %d)", defaultLogLevel, defaultWorkers)
+}
+
+func globalUsage(defaultWorkers int) string {
+	return usageMessage(defaultWorkers) + `
+
+Passthrough (argv not matching ingest flags above is forwarded to ExifTool):
+  exiftool-go [EXIFTOOL_ARGS...]
+
+Reserved before forward (plan §5.8): pipeline subcommand, --backend=..., --help/--version.
+Default passthrough backend is wasm when --backend is omitted; use --backend=native for the perl subprocess driver.
+`
 }

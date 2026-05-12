@@ -1,0 +1,44 @@
+#!/usr/bin/env sh
+# Regenerate selected goldens using ExifTool (goldens assume 13.55).
+# Usage: from repo root, ./scripts/exiftoolgen <target>
+# Driver: EXIFTOOL env, else EXIFTOOL_GO_EXIFTOOL, else `command -v exiftool`.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+EXIFTOOL="${EXIFTOOL:-${EXIFTOOL_GO_EXIFTOOL:-}}"
+if test -z "$EXIFTOOL"; then
+	EXIFTOOL="$(command -v exiftool || true)"
+fi
+export TZ="${TZ:-UTC}"
+export LC_ALL="${LC_ALL:-C}"
+
+if test -z "$EXIFTOOL" || test ! -f "$EXIFTOOL"; then
+	echo "exiftool not found: set EXIFTOOL or EXIFTOOL_GO_EXIFTOOL or install on PATH" >&2
+	exit 1
+fi
+
+case "${1:-}" in
+version)
+	"$EXIFTOOL" -ver >"$ROOT/testdata/golden/version.stdout"
+	echo "wrote testdata/golden/version.stdout"
+	;;
+json-samsung)
+	OUT="$ROOT/testdata/golden/json_samsung_sm_g930p.json"
+	(
+		cd "$ROOT" && "$EXIFTOOL" -json -q testdata/images/jpeg/samsung_sm_g930p.jpg |
+			go run ./internal/golden/cmd/regenjson "$OUT"
+	)
+	echo "wrote testdata/golden/json_samsung_sm_g930p.json"
+	;;
+tree-recurse)
+	OUT="$ROOT/testdata/golden/tree_r_filename_sorted.stdout"
+	(
+		cd "$ROOT" && "$EXIFTOOL" -r -T -Filename testdata/tree | sort >"$OUT"
+	)
+	echo "wrote testdata/golden/tree_r_filename_sorted.stdout"
+	;;
+*)
+	echo "usage: $0 version|json-samsung|tree-recurse" >&2
+	exit 1
+	;;
+esac

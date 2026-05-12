@@ -74,7 +74,13 @@ func xdgDatabasePath(xdgDataHome string) string {
 func runE2EBinary(t *testing.T, xdgDataHome string, stdin string, args ...string) []byte {
 	t.Helper()
 
+	repoRoot, err := repoRootFromCaller()
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+
 	cmd := exec.Command(e2eBinaryPath, args...)
+	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+xdgDataHome)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
@@ -90,7 +96,13 @@ func runE2EBinary(t *testing.T, xdgDataHome string, stdin string, args ...string
 func runE2EBinaryExpectFailure(t *testing.T, xdgDataHome string, stdin string, args ...string) []byte {
 	t.Helper()
 
+	repoRoot, err := repoRootFromCaller()
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+
 	cmd := exec.Command(e2eBinaryPath, args...)
+	cmd.Dir = repoRoot
 	cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+xdgDataHome)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
@@ -143,6 +155,33 @@ func TestE2ECLIArgs(t *testing.T) {
 	withExifDir := createRichFixtureInputDir(t, repoRoot)
 
 	_ = runE2EBinary(t, xdgDataHome, "", withExifDir)
+
+	dbPath := xdgDatabasePath(xdgDataHome)
+	assertWithExifRows(t, dbPath, repoRoot)
+}
+
+func TestE2EPipelineSubcommandIsolation(t *testing.T) {
+	t.Helper()
+
+	repoRoot, err := repoRootFromCaller()
+	if err != nil {
+		t.Fatalf("repo root: %v", err)
+	}
+
+	xdgDataHome := t.TempDir()
+	withExifDir := createRichFixtureInputDir(t, repoRoot)
+
+	cmd := exec.Command(e2eBinaryPath, "pipeline", withExifDir)
+	cmd.Dir = repoRoot
+	cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+xdgDataHome)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("expected successful ingest via pipeline subcommand: %v\n%s", err, string(out))
+	}
+	combined := strings.ToLower(string(out))
+	if strings.Contains(combined, "dir=pipeline") || strings.Contains(combined, "root=pipeline") {
+		t.Fatalf("pipeline must be a subcommand, not a scan root; output:\n%s", string(out))
+	}
 
 	dbPath := xdgDatabasePath(xdgDataHome)
 	assertWithExifRows(t, dbPath, repoRoot)

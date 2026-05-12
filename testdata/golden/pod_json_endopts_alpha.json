@@ -1,0 +1,23 @@
+[
+  {
+    "BitsPerSample": 8,
+    "ColorComponents": 1,
+    "Directory": "testdata/tree/alpha",
+    "EncodingProcess": "Baseline DCT, Huffman coding",
+    "ExifToolVersion": 13.55,
+    "FileName": "a.jpg",
+    "FileSize": "203 bytes",
+    "FileType": "JPEG",
+    "FileTypeExtension": "jpg",
+    "ImageHeight": 100,
+    "ImageSize": "100x100",
+    "ImageWidth": 100,
+    "JFIFVersion": 1.01,
+    "MIMEType": "image/jpeg",
+    "Megapixels": 0.01,
+    "ResolutionUnit": "None",
+    "SourceFile": "testdata/tree/alpha/a.jpg",
+    "XResolution": 72,
+    "YResolution": 72
+  }
+]

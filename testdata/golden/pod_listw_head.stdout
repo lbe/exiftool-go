@@ -1,0 +1,35 @@
+Writable tags:
+  ACDSeeRegion ACDSeeRegionALGArea ACDSeeRegionALGAreaH ACDSeeRegionALGAreaW
+  ACDSeeRegionALGAreaX ACDSeeRegionALGAreaY ACDSeeRegionAppliedToDimensions
+  ACDSeeRegionAppliedToDimensionsH ACDSeeRegionAppliedToDimensionsUnit
+  ACDSeeRegionAppliedToDimensionsW ACDSeeRegionDLYArea ACDSeeRegionDLYAreaH
+  ACDSeeRegionDLYAreaW ACDSeeRegionDLYAreaX ACDSeeRegionDLYAreaY
+  ACDSeeRegionName ACDSeeRegionNameAssignType ACDSeeRegionType
+  ADLBracketingStep ADLBracketingType AEAperture AEApertureSteps AEAverage
+  AEBAutoCancel AEBBracketValue AEBSequence AEBSequenceAutoCancel AEBShotCount
+  AEBXv AEBracketingSteps AEError AEExposureTime AELButton AELExposureIndicator
+  AELock AELockButton AELockButtonPlusDials AELockForMB-D80
+  AELockMeterModeAfterFocus AEMatrix AEMaxAperture AEMaxAperture2
+  AEMeteringMode AEMeteringMode2 AEMeteringSegments AEMicroadjustment
+  AEMinAperture AEMinExposureTime AEProgramMode AESetting AEStable AETarget
+  AEWhiteBalance AEXv AE_ISO AF-AssistIlluminator AF-CFocusDisplay AF-CPriority
+  AF-CPrioritySelection AF-CSetting AF-CSpeedTrackingSensitivity
+  AF-CTrackingSensitivity AF-CZoneAreaSwitching AF-OnButton AF-OnForMB-D10
+  AF-OnForMB-D11 AF-OnForMB-D12 AF-OnOutOfFocusRelease AF-SPriority
+  AF-SPrioritySelection AFAccelDecelTracking AFActivation AFAdjustment
+  AFAndMeteringButtons AFAperture AFAreaHeight AFAreaIllumination
+  AFAreaInitialHeight AFAreaInitialWidth AFAreaInitialXPosition
+  AFAreaInitialYPosition AFAreaMode AFAreaModeSetting AFAreaPointSize
+  AFAreaSelectMethod AFAreaSelectionMethod AFAreaSize AFAreaWidth
+  AFAreaXPosition AFAreaXPosition1 AFAreaYPosition AFAreaYPosition1
+  AFAreaZoneSize AFAreas AFAssist AFAssistBeam AFAssistLamp AFButtonPressed
+  AFCHold AFCPointTracking AFCSensitivity AFConfidence AFConfigTool
+  AFCoordinatesAvailable AFDefocus AFDetectionMethod AFDuringLiveView
+  AFFineTune AFFineTuneAdj AFFineTuneAdjTele AFFineTuneIndex AFFocusArea
+  AFFrameSize AFHold AFIlluminator AFImageHeight AFImageWidth AFInfoK3III
+  AFIntegrationTime AFMeasuredDepth AFMicroAdj AFMicroAdjMode
+  AFMicroAdjRegisteredLenses AFMicroAdjValue AFMicroadjustment AFMode
+  AFModeRestrictions AFOnAELockButtonSwitch AFOnButton AFPerformance AFPoint
+  AFPointActivationArea AFPointAreaExpansion AFPointAtShutterRelease
+  AFPointAutoSelection AFPointBrightness AFPointDetails
+  AFPointDisplayDuringFocus AFPointIllumination AFPointInFocus AFPointMode
