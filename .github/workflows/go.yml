@@ -17,11 +17,12 @@ jobs:
         run: |
           set -euo pipefail
           VER=13.55
-          SUM=5f4c81d34ad406538c2871ad72dbfceb5d9b412b2f16cbbeb4d712d270846667
-          curl -fsSL -o /tmp/Image-ExifTool-${VER}.tar.gz "https://exiftool.org/Image-ExifTool-${VER}.tar.gz"
-          echo "${SUM}  /tmp/Image-ExifTool-${VER}.tar.gz" | sha256sum -c -
-          tar -xzf "/tmp/Image-ExifTool-${VER}.tar.gz" -C /tmp
-          mv "/tmp/Image-ExifTool-${VER}" "/tmp/exiftool-go-exiftool-${VER}"
+          SUM=5c9d422ad128fab728aacc5cc0aa77095d14cde74931389dd961d3d720e6b316
+          URL="https://github.com/exiftool/exiftool/archive/refs/tags/${VER}.tar.gz"
+          curl -fsSL -o "/tmp/exiftool-${VER}.tar.gz" "${URL}"
+          echo "${SUM}  /tmp/exiftool-${VER}.tar.gz" | sha256sum -c -
+          tar -xzf "/tmp/exiftool-${VER}.tar.gz" -C /tmp
+          mv "/tmp/exiftool-${VER}" "/tmp/exiftool-go-exiftool-${VER}"
           test -x "/tmp/exiftool-go-exiftool-${VER}/exiftool"
 
       - name: Set up Go
