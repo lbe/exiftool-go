@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -14,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/creack/pty/v2"
 	"github.com/lbe/exiftool-go/internal/testsupport"
 
 	_ "modernc.org/sqlite"
@@ -207,29 +210,36 @@ func TestE2EStdinPipe(t *testing.T) {
 func TestE2ENoInputTTY(t *testing.T) {
 	t.Helper()
 
-	if _, err := exec.LookPath("script"); err != nil {
-		t.Skip("script utility not available for pseudo-terminal test")
-	}
-
 	xdgDataHome := t.TempDir()
 
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "linux":
-		cmd = exec.Command("script", "-q", "-c", e2eBinaryPath, "/dev/null")
-	default:
-		// BSD/macOS script: script [-aq] [file] [command ...]
-		cmd = exec.Command("script", "-q", "/dev/null", e2eBinaryPath)
-	}
+	cmd := exec.Command(e2eBinaryPath)
 	cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+xdgDataHome)
-	out, err := cmd.CombinedOutput()
-	if err == nil {
+
+	ptmx, err := pty.Start(cmd)
+	if err != nil {
+		t.Fatalf("pty start: %v", err)
+	}
+
+	var out bytes.Buffer
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		_, _ = io.Copy(&out, ptmx)
+	}()
+
+	waitErr := cmd.Wait()
+	if closeErr := ptmx.Close(); closeErr != nil {
+		t.Fatalf("pty close: %v", closeErr)
+	}
+	<-readDone
+
+	if waitErr == nil {
 		t.Fatal("expected non-zero exit when no input is provided on TTY")
 	}
 
-	errText := strings.ToLower(string(out))
+	errText := strings.ToLower(out.String())
 	if !strings.Contains(errText, "no directories provided") {
-		t.Fatalf("expected no directories message, got: %q", string(out))
+		t.Fatalf("expected no directories message, got: %q", out.String())
 	}
 }
 
