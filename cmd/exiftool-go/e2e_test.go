@@ -213,7 +213,14 @@ func TestE2ENoInputTTY(t *testing.T) {
 
 	xdgDataHome := t.TempDir()
 
-	cmd := exec.Command("script", "-q", "/dev/null", e2eBinaryPath)
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "linux":
+		cmd = exec.Command("script", "-q", "-c", e2eBinaryPath, "/dev/null")
+	default:
+		// BSD/macOS script: script [-aq] [file] [command ...]
+		cmd = exec.Command("script", "-q", "/dev/null", e2eBinaryPath)
+	}
 	cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+xdgDataHome)
 	out, err := cmd.CombinedOutput()
 	if err == nil {
