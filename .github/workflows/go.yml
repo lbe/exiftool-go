@@ -3,6 +3,7 @@ name: Go
 on:
   push:
     branches: [main]
+    tags: ["*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -44,3 +45,23 @@ jobs:
           files: coverage.out
           fail_ci_if_error: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub Release for tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+            echo "Release for $TAG_NAME already exists; skipping."
+            exit 0
+          fi
+          gh release create "$TAG_NAME" \
+            --title "$TAG_NAME" \
+            --generate-notes
