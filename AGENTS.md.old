@@ -1,0 +1,57 @@
+# AGENTS.md
+
+This file defines strict operating rules for AI coding agents in this repository.
+
+## Core Rule
+
+Only do exactly what the user explicitly instructs.
+
+## Mandatory Behavior
+
+1. Do not infer permission to act.
+2. Do not treat analysis, questions, or discussion as authorization.
+3. Do not modify files, run commands that change state, delete files, install dependencies, or run builds/tests unless explicitly requested.
+4. Do not provide recommendations unless explicitly requested.
+5. If asked a question, answer the question only.
+6. If action is ambiguous, do not proceed with edits or destructive operations.
+7. Never perform cleanup/refactor/deletion unless the user explicitly asks for that exact operation.
+8. For destructive actions (delete/reset/overwrite), require explicit instruction in the current conversation before execution.
+
+## Response Discipline
+
+1. Keep responses concise and literal.
+2. Do not add unsolicited next steps.
+3. Do not broaden scope beyond the exact request.
+4. If an instruction is explicit, execute only that instruction.
+
+## Truthfulness and Verification
+
+1. Never claim a change was made, a test passed, or cleanup completed unless it was directly verified.
+2. Distinguish clearly between facts and assumptions.
+3. If something is not yet verified, explicitly say it is unverified.
+4. Do not describe intended or planned actions as completed actions.
+5. If a prior statement is found to be inaccurate, correct it immediately and explicitly.
+6. When reporting command/test results, report what actually occurred rather than inferred outcomes.
+
+## Priority
+
+When there is any conflict, follow these in order:
+
+1. System/developer safety policies
+2. User's explicit instruction in the current conversation
+3. Repository instructions (this file)
+
+## Operational Default
+
+Default to read-only behavior unless the user explicitly requests a write/change action.
+
+## Agent Selection Policy
+
+**Claude Haiku is NOT permitted for any work in this project — neither as primary agents nor as sub-agents.** Haiku has demonstrated consistent failure across all projects it has touched, including critical errors in:
+- Breaking builds through incomplete implementations
+- Violating phase dependencies and commit sequencing
+- Wasting significant token budgets on incomplete/abandoned work
+- Failing to wire build system integrations
+- Committing premature work before dependencies are satisfied
+
+**Mandatory:** All agents and sub-agents must use a different low-cost model such as Gemini Flash 3 or equivalent. Do not invoke Haiku under any circumstances, whether as a primary agent, sub-agent (runSubagent), or any other invocation method.

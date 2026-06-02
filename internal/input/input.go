@@ -9,7 +9,8 @@ import (
 	"strings"
 )
 
-var errNoDirectories = errors.New("no directories provided")
+// ErrNoDirectories is returned when no directory paths are available from args or stdin.
+var ErrNoDirectories = errors.New("no directories provided")
 
 // terminalChecker is the function used to detect whether a file is a TTY.
 // It is a variable so tests can replace it with a mock.
@@ -52,7 +53,7 @@ func resolveFromStdin(stdin *os.File) ([]string, error) {
 		return nil, err
 	}
 	if isTerminal {
-		return nil, errNoDirectories
+		return nil, ErrNoDirectories
 	}
 
 	return readDirs(stdin)
@@ -72,7 +73,7 @@ func readDirs(stdin *os.File) ([]string, error) {
 		return nil, scanErr
 	}
 	if len(dirs) == 0 {
-		return nil, errNoDirectories
+		return nil, ErrNoDirectories
 	}
 	return dirs, nil
 }

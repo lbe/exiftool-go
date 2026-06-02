@@ -2,17 +2,17 @@ package input
 
 import (
 	"bufio"
+	"errors"
+	"io"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
-// TestResolveDirsReturnsArgsWhenProvided verifies that when CLI arguments are
-// present, ResolveDirs returns them directly without consulting stdin.
 func TestResolveDirsReturnsArgsWhenProvided(t *testing.T) {
 	args := []string{"/photos/one", "/photos/two"}
 
-	// stdin state is irrelevant when args are present; pass os.Stdin directly.
 	got, err := ResolveDirs(args, os.Stdin)
 	if err != nil {
 		t.Fatalf("ResolveDirs returned unexpected error: %v", err)
@@ -22,8 +22,6 @@ func TestResolveDirsReturnsArgsWhenProvided(t *testing.T) {
 	}
 }
 
-// TestResolveDirsPipeReadsLines verifies that when no CLI args are given and
-// stdin is a pipe, ResolveDirs reads newline-delimited directory paths from it.
 func TestResolveDirsPipeReadsLines(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -32,7 +30,6 @@ func TestResolveDirsPipeReadsLines(t *testing.T) {
 
 	want := []string{"/photos/from-pipe", "/photos/also-pipe"}
 
-	// Write lines into the write end and close so the reader sees EOF.
 	go func() {
 		defer w.Close()
 		for _, dir := range want {
@@ -51,12 +48,44 @@ func TestResolveDirsPipeReadsLines(t *testing.T) {
 	}
 }
 
-// TestResolveDirsTerminalNoArgsReturnsError verifies that when no CLI args are
-// given and stdin is a terminal (TTY), ResolveDirs returns an error rather than
-// blocking on stdin. It also verifies that terminalChecker is actually invoked,
-// so this test fails (RED) until the GREEN implementation wires up the call.
-func TestResolveDirsTerminalNoArgsReturnsError(t *testing.T) {
-	// Inject a fake terminalChecker that records whether it was called.
+func TestResolveDirsPipeSkipsBlankLines(t *testing.T) {
+	stdin := strings.NewReader("\n  /photos/one  \n\n/photos/two\n")
+
+	got, err := ResolveDirs(nil, fileFromReader(t, stdin))
+	if err != nil {
+		t.Fatalf("ResolveDirs returned unexpected error: %v", err)
+	}
+	want := []string{"/photos/one", "/photos/two"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ResolveDirs: got %v, want %v", got, want)
+	}
+}
+
+func TestResolveDirsEmptyPipeReturnsErrNoDirectories(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatalf("close write end: %v", err)
+	}
+
+	_, err = ResolveDirs(nil, r)
+	if !errors.Is(err, ErrNoDirectories) {
+		t.Fatalf("ResolveDirs: got error %v, want ErrNoDirectories", err)
+	}
+}
+
+func TestResolveDirsWhitespaceOnlyPipeReturnsErrNoDirectories(t *testing.T) {
+	stdin := strings.NewReader("\n   \n")
+
+	_, err := ResolveDirs(nil, fileFromReader(t, stdin))
+	if !errors.Is(err, ErrNoDirectories) {
+		t.Fatalf("ResolveDirs: got error %v, want ErrNoDirectories", err)
+	}
+}
+
+func TestResolveDirsTerminalNoArgsReturnsErrNoDirectories(t *testing.T) {
 	orig := terminalChecker
 	defer func() { terminalChecker = orig }()
 	called := false
@@ -66,16 +95,28 @@ func TestResolveDirsTerminalNoArgsReturnsError(t *testing.T) {
 	}
 
 	_, err := ResolveDirs(nil, os.Stdin)
-	if err == nil {
-		t.Fatal("ResolveDirs: expected error when stdin is a terminal with no args, got nil")
+	if !errors.Is(err, ErrNoDirectories) {
+		t.Fatalf("ResolveDirs: got error %v, want ErrNoDirectories", err)
 	}
 	if !called {
-		t.Fatal("ResolveDirs: terminalChecker was not called, but it must be when no args are given")
+		t.Fatal("ResolveDirs: terminalChecker was not called when no args are given")
 	}
 }
 
-// TestResolveDirsArgsWinOverPipe verifies that CLI args take precedence even
-// when stdin is a pipe with data, and stdin is not consumed in that case.
+func TestResolveDirsTerminalCheckerError(t *testing.T) {
+	orig := terminalChecker
+	defer func() { terminalChecker = orig }()
+	checkErr := errors.New("stat failed")
+	terminalChecker = func(_ *os.File) (bool, error) {
+		return false, checkErr
+	}
+
+	_, err := ResolveDirs(nil, os.Stdin)
+	if !errors.Is(err, checkErr) {
+		t.Fatalf("ResolveDirs: got error %v, want %v", err, checkErr)
+	}
+}
+
 func TestResolveDirsArgsWinOverPipe(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -111,7 +152,6 @@ func TestResolveDirsArgsWinOverPipe(t *testing.T) {
 		t.Fatal("ResolveDirs: terminalChecker should not be called when args are provided")
 	}
 
-	// Args path should not consume piped stdin.
 	s := bufio.NewScanner(r)
 	if !s.Scan() {
 		t.Fatal("expected pipe data to remain unread when args are provided")
@@ -122,4 +162,30 @@ func TestResolveDirsArgsWinOverPipe(t *testing.T) {
 	if err := s.Err(); err != nil {
 		t.Fatalf("scan pipe after ResolveDirs: %v", err)
 	}
+}
+
+func fileFromReader(t *testing.T, r io.Reader) *os.File {
+	t.Helper()
+
+	pipeR, pipeW, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, copyErr := io.Copy(pipeW, r)
+		closeErr := pipeW.Close()
+		if copyErr != nil {
+			done <- copyErr
+			return
+		}
+		done <- closeErr
+	}()
+
+	if err := <-done; err != nil {
+		t.Fatalf("populate pipe: %v", err)
+	}
+
+	return pipeR
 }

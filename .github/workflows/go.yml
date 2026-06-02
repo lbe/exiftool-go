@@ -33,7 +33,14 @@ jobs:
       - name: Build
         run: go build -v ./...
 
-      - name: Test
+      - name: Test (Coverage)
         env:
           EXIFTOOL_GO_EXIFTOOL: /tmp/exiftool-go-exiftool-13.55/exiftool
-        run: go test -v ./... -timeout 45m
+        run: go test -tags "integration,e2e" -v ./... -coverprofile=coverage.out -count=1
+
+      - name: Upload Coverage (Codecov)
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage.out
+          fail_ci_if_error: false
+          token: ${{ secrets.CODECOV_TOKEN }}

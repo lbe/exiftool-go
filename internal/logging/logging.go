@@ -6,8 +6,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	consoleslog "github.com/phsym/console-slog"
 )
 
 const handlerTimeFormat = time.RFC3339
@@ -36,7 +34,7 @@ func ParseLevel(level string) (slog.Level, error) {
 	return parsed, nil
 }
 
-// Setup configures the process default logger with a console-slog handler.
+// Setup configures the process default logger with a text handler on stderr.
 func Setup(level string) error {
 	slog.Debug("Setup enter", "level", level)
 
@@ -45,10 +43,14 @@ func Setup(level string) error {
 		return err
 	}
 
-	handler := consoleslog.NewHandler(os.Stderr, &consoleslog.HandlerOptions{
-		Level:      parsedLevel,
-		NoColor:    true,
-		TimeFormat: handlerTimeFormat,
+	handler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+		Level: parsedLevel,
+		ReplaceAttr: func(_ []string, attr slog.Attr) slog.Attr {
+			if attr.Key == slog.TimeKey {
+				return slog.String(slog.TimeKey, attr.Value.Time().Format(handlerTimeFormat))
+			}
+			return attr
+		},
 	})
 
 	logger := slog.New(handler)

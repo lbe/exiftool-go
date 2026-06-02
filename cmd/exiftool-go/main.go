@@ -18,6 +18,7 @@ import (
 	"github.com/lbe/exiftool-go/internal/logging"
 	"github.com/lbe/exiftool-go/internal/pipeline"
 	"github.com/lbe/exiftool-go/internal/xdg"
+	wasmexif "github.com/lbe/go-exiftool-wasm"
 )
 
 const defaultLogLevel = "INFO"
@@ -78,14 +79,6 @@ func run(args []string, stdin *os.File) error {
 		return runIngest(cfg, stdin)
 	}
 
-	if isLegacyPipelineInvocation(rest) {
-		cfg, err := parseFlags(rest)
-		if err != nil {
-			return err
-		}
-		return runIngest(cfg, stdin)
-	}
-
 	return runForward(context.Background(), stdin, rest, backendKind)
 }
 
@@ -97,37 +90,6 @@ func workersDefault() int {
 	return n
 }
 
-// isLegacyPipelineInvocation reports argv that uses only ingest flags (-l,
-// --log-level, -w, --workers) plus positional directory arguments (plan §7 D).
-func isLegacyPipelineInvocation(args []string) bool {
-	for i := 0; i < len(args); {
-		arg := args[i]
-		if !strings.HasPrefix(arg, "-") {
-			i++
-			continue
-		}
-		switch {
-		case arg == "-l" || arg == "--log-level":
-			if i+1 >= len(args) {
-				return false
-			}
-			i += 2
-		case strings.HasPrefix(arg, "--log-level="):
-			i++
-		case arg == "-w" || arg == "--workers":
-			if i+1 >= len(args) {
-				return false
-			}
-			i += 2
-		case strings.HasPrefix(arg, "--workers="):
-			i++
-		default:
-			return false
-		}
-	}
-	return true
-}
-
 func runForward(ctx context.Context, stdin io.Reader, args []string, kind backend.BackendKind) error {
 	d := backend.NewDispatchDriver(kind)
 	out, err := d.CommandContext(ctx, stdin, args...)
@@ -136,6 +98,10 @@ func runForward(ctx context.Context, stdin io.Reader, args []string, kind backen
 	}
 	if err == nil {
 		return nil
+	}
+	var exitErr *wasmexif.ExitError
+	if errors.As(err, &exitErr) {
+		return exitError{code: exitErr.Code}
 	}
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
@@ -216,16 +182,18 @@ func normalizeLevel(value string) string {
 }
 
 func usageMessage(defaultWorkers int) string {
-	return fmt.Sprintf("usage: exiftool-go [-l LEVEL|--log-level LEVEL] [-w N|--workers N] [DIR ...]\n       exiftool-go pipeline [same flags] [DIR ...]\n  LEVEL: DEBUG, INFO, WARN, ERROR (default: %s)\n  N: worker count >= 1 (default: %d)", defaultLogLevel, defaultWorkers)
+	return fmt.Sprintf("usage: exiftool-go pipeline [-l LEVEL|--log-level LEVEL] [-w N|--workers N] [DIR ...]\n  LEVEL: DEBUG, INFO, WARN, ERROR (default: %s)\n  N: worker count >= 1 (default: %d)", defaultLogLevel, defaultWorkers)
 }
 
 func globalUsage(defaultWorkers int) string {
 	return usageMessage(defaultWorkers) + `
 
-Passthrough (argv not matching ingest flags above is forwarded to ExifTool):
+Default behavior forwards argv to ExifTool (wasm backend unless --backend=native):
   exiftool-go [EXIFTOOL_ARGS...]
 
-Reserved before forward (plan §5.8): pipeline subcommand, --backend=..., --help/--version.
-Default passthrough backend is wasm when --backend is omitted; use --backend=native for the perl subprocess driver.
+Ingest (scan directories into SQLite) requires the pipeline subcommand:
+  exiftool-go pipeline [ingest flags] [DIR ...]
+
+Reserved before forward: pipeline subcommand, --backend=..., --help/--version.
 `
 }

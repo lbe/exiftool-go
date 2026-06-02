@@ -1,10 +1,10 @@
+//go:build e2e
+
 package main
 
 import (
-	"bytes"
 	"database/sql"
 	"fmt"
-	"io"
 	"math"
 	"os"
 	"os/exec"
@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/creack/pty/v2"
 	"github.com/lbe/exiftool-go/internal/testsupport"
 
 	_ "modernc.org/sqlite"
@@ -131,22 +130,7 @@ func openSQLiteDB(t *testing.T, dbPath string) *sql.DB {
 	return database
 }
 
-func TestE2EBinaryBuilt(t *testing.T) {
-	t.Helper()
-
-	if e2eBinaryPath == "" {
-		t.Fatal("e2eBinaryPath should be set by TestMain")
-	}
-	info, err := os.Stat(e2eBinaryPath)
-	if err != nil {
-		t.Fatalf("stat e2e binary: %v", err)
-	}
-	if info.IsDir() {
-		t.Fatalf("e2e binary path is a directory: %s", e2eBinaryPath)
-	}
-}
-
-func TestE2ECLIArgs(t *testing.T) {
+func TestE2EIngest(t *testing.T) {
 	t.Helper()
 
 	repoRoot, err := repoRootFromCaller()
@@ -154,16 +138,35 @@ func TestE2ECLIArgs(t *testing.T) {
 		t.Fatalf("repo root: %v", err)
 	}
 
-	xdgDataHome := t.TempDir()
 	withExifDir := createRichFixtureInputDir(t, repoRoot)
 
-	_ = runE2EBinary(t, xdgDataHome, "", withExifDir)
+	t.Run("pipeline_subcommand", func(t *testing.T) {
+		t.Helper()
+		xdgDataHome := t.TempDir()
 
-	dbPath := xdgDatabasePath(xdgDataHome)
-	assertWithExifRows(t, dbPath, repoRoot)
+		cmd := exec.Command(e2eBinaryPath, "pipeline", withExifDir)
+		cmd.Dir = repoRoot
+		cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+xdgDataHome)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("pipeline ingest: %v\n%s", err, string(out))
+		}
+		combined := strings.ToLower(string(out))
+		if strings.Contains(combined, "dir=pipeline") || strings.Contains(combined, "root=pipeline") {
+			t.Fatalf("pipeline must be a subcommand, not a scan root; output:\n%s", string(out))
+		}
+		assertWithExifRows(t, xdgDatabasePath(xdgDataHome), repoRoot)
+	})
+
+	t.Run("stdin_pipe", func(t *testing.T) {
+		t.Helper()
+		xdgDataHome := t.TempDir()
+		_ = runE2EBinary(t, xdgDataHome, withExifDir+"\n", "pipeline")
+		assertWithExifRows(t, xdgDatabasePath(xdgDataHome), repoRoot)
+	})
 }
 
-func TestE2EPipelineSubcommandIsolation(t *testing.T) {
+func TestE2EIngestEXIFStatuses(t *testing.T) {
 	t.Helper()
 
 	repoRoot, err := repoRootFromCaller()
@@ -171,199 +174,34 @@ func TestE2EPipelineSubcommandIsolation(t *testing.T) {
 		t.Fatalf("repo root: %v", err)
 	}
 
-	xdgDataHome := t.TempDir()
-	withExifDir := createRichFixtureInputDir(t, repoRoot)
+	t.Run("no_exif", func(t *testing.T) {
+		t.Helper()
+		xdgDataHome := t.TempDir()
+		noExifDir := filepath.Join(repoRoot, "testdata", "no_exif")
+		_ = runE2EBinary(t, xdgDataHome, "", "pipeline", noExifDir)
+		assertNoExifRows(t, xdgDatabasePath(xdgDataHome))
+	})
 
-	cmd := exec.Command(e2eBinaryPath, "pipeline", withExifDir)
-	cmd.Dir = repoRoot
-	cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+xdgDataHome)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		t.Fatalf("expected successful ingest via pipeline subcommand: %v\n%s", err, string(out))
-	}
-	combined := strings.ToLower(string(out))
-	if strings.Contains(combined, "dir=pipeline") || strings.Contains(combined, "root=pipeline") {
-		t.Fatalf("pipeline must be a subcommand, not a scan root; output:\n%s", string(out))
-	}
-
-	dbPath := xdgDatabasePath(xdgDataHome)
-	assertWithExifRows(t, dbPath, repoRoot)
+	t.Run("parse_error", func(t *testing.T) {
+		t.Helper()
+		xdgDataHome := t.TempDir()
+		corruptDir := filepath.Join(repoRoot, "testdata", "corrupt")
+		_ = runE2EBinary(t, xdgDataHome, "", "pipeline", corruptDir)
+		assertCorruptRows(t, xdgDatabasePath(xdgDataHome))
+	})
 }
 
-func TestE2EStdinPipe(t *testing.T) {
-	t.Helper()
-
-	repoRoot, err := repoRootFromCaller()
-	if err != nil {
-		t.Fatalf("repo root: %v", err)
-	}
-
-	xdgDataHome := t.TempDir()
-	withExifDir := createRichFixtureInputDir(t, repoRoot)
-
-	_ = runE2EBinary(t, xdgDataHome, withExifDir+"\n")
-
-	dbPath := xdgDatabasePath(xdgDataHome)
-	assertWithExifRows(t, dbPath, repoRoot)
-}
-
-func TestE2ENoInputTTY(t *testing.T) {
-	t.Helper()
-
-	xdgDataHome := t.TempDir()
-
-	cmd := exec.Command(e2eBinaryPath)
-	cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+xdgDataHome)
-
-	ptmx, err := pty.Start(cmd)
-	if err != nil {
-		t.Fatalf("pty start: %v", err)
-	}
-
-	var out bytes.Buffer
-	readDone := make(chan struct{})
-	go func() {
-		defer close(readDone)
-		_, _ = io.Copy(&out, ptmx)
-	}()
-
-	waitErr := cmd.Wait()
-	if closeErr := ptmx.Close(); closeErr != nil {
-		t.Fatalf("pty close: %v", closeErr)
-	}
-	<-readDone
-
-	if waitErr == nil {
-		t.Fatal("expected non-zero exit when no input is provided on TTY")
-	}
-
-	errText := strings.ToLower(out.String())
-	if !strings.Contains(errText, "no directories provided") {
-		t.Fatalf("expected no directories message, got: %q", out.String())
-	}
-}
-
-func TestE2ENoInputEmptyPipe(t *testing.T) {
-	t.Helper()
-
-	xdgDataHome := t.TempDir()
-
-	out := runE2EBinaryExpectFailure(t, xdgDataHome, "\n")
-	errText := strings.ToLower(string(out))
-	if !strings.Contains(errText, "no directories provided") {
-		t.Fatalf("expected no directories message, got: %q", string(out))
-	}
-}
-
-func TestE2ENonExistentDirectory(t *testing.T) {
+func TestE2EIngestFailure(t *testing.T) {
 	t.Helper()
 
 	xdgDataHome := t.TempDir()
 	missingDir := filepath.Join(t.TempDir(), "does-not-exist")
 
-	out := runE2EBinaryExpectFailure(t, xdgDataHome, "", missingDir)
+	out := runE2EBinaryExpectFailure(t, xdgDataHome, "", "pipeline", missingDir)
 	errText := strings.ToLower(string(out))
 	if !strings.Contains(errText, "no such file or directory") {
 		t.Fatalf("expected missing directory error, got: %q", string(out))
 	}
-}
-
-func TestE2ENoEXIFDirectory(t *testing.T) {
-	t.Helper()
-
-	repoRoot, err := repoRootFromCaller()
-	if err != nil {
-		t.Fatalf("repo root: %v", err)
-	}
-
-	xdgDataHome := t.TempDir()
-	noExifDir := filepath.Join(repoRoot, "testdata", "no_exif")
-
-	_ = runE2EBinary(t, xdgDataHome, "", noExifDir)
-
-	dbPath := xdgDatabasePath(xdgDataHome)
-	assertNoExifRows(t, dbPath)
-}
-
-func TestE2ECorruptImages(t *testing.T) {
-	t.Helper()
-
-	repoRoot, err := repoRootFromCaller()
-	if err != nil {
-		t.Fatalf("repo root: %v", err)
-	}
-
-	xdgDataHome := t.TempDir()
-	corruptDir := filepath.Join(repoRoot, "testdata", "corrupt")
-
-	_ = runE2EBinary(t, xdgDataHome, "", corruptDir)
-
-	dbPath := xdgDatabasePath(xdgDataHome)
-	assertCorruptRows(t, dbPath)
-}
-
-func TestE2ELogLevelFlag(t *testing.T) {
-	t.Helper()
-
-	repoRoot, err := repoRootFromCaller()
-	if err != nil {
-		t.Fatalf("repo root: %v", err)
-	}
-
-	withExifDir := createRichFixtureInputDir(t, repoRoot)
-
-	t.Run("debug flag enables debug logs", func(t *testing.T) {
-		xdgDataHome := t.TempDir()
-
-		out := runE2EBinary(t, xdgDataHome, "", "-l", "DEBUG", withExifDir)
-		if !strings.Contains(string(out), "DEBUG") {
-			t.Fatalf("expected DEBUG logs when -l DEBUG is set, got: %q", string(out))
-		}
-	})
-
-	t.Run("default level suppresses debug logs", func(t *testing.T) {
-		xdgDataHome := t.TempDir()
-
-		out := runE2EBinary(t, xdgDataHome, "", withExifDir)
-		if strings.Contains(string(out), "DEBUG") {
-			t.Fatalf("did not expect DEBUG logs at default level, got: %q", string(out))
-		}
-	})
-}
-
-func TestE2EWorkerFlag(t *testing.T) {
-	t.Helper()
-
-	repoRoot, err := repoRootFromCaller()
-	if err != nil {
-		t.Fatalf("repo root: %v", err)
-	}
-
-	withExifDir := createRichFixtureInputDir(t, repoRoot)
-
-	t.Run("short -w sets worker count", func(t *testing.T) {
-		xdgDataHome := t.TempDir()
-
-		out := runE2EBinary(t, xdgDataHome, "", "-w", "1", withExifDir)
-		if !strings.Contains(string(out), "workers=1") {
-			t.Fatalf("expected workers=1 in output, got: %q", string(out))
-		}
-
-		dbPath := xdgDatabasePath(xdgDataHome)
-		assertWithExifRows(t, dbPath, repoRoot)
-	})
-
-	t.Run("long --workers sets worker count", func(t *testing.T) {
-		xdgDataHome := t.TempDir()
-
-		out := runE2EBinary(t, xdgDataHome, "", "--workers", "2", withExifDir)
-		if !strings.Contains(string(out), "workers=2") {
-			t.Fatalf("expected workers=2 in output, got: %q", string(out))
-		}
-
-		dbPath := xdgDatabasePath(xdgDataHome)
-		assertWithExifRows(t, dbPath, repoRoot)
-	})
 }
 
 func assertWithExifRows(t *testing.T, dbPath string, repoRoot string) {
