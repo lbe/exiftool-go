@@ -74,7 +74,7 @@ flowchart TD
 
 - **`StripLeadingBackendFlags`** (in **`internal/backend/peel.go`**) removes leading **`--backend=`** / **`--backend`** pairs. If none are present, **`BackendWasm`** is the default for **passthrough**.
 - **Ingest:** explicit **`pipeline`** subcommand only → **`internal/pipeline.Run`**. Ingest **always** uses the wasm backend inside **`pipeline`**; the peeled **`--backend`** flag does not affect ingest.
-- **Passthrough (default):** all other argv → **`DispatchDriver.CommandContext`** (native or wasm per peeled kind). Subprocess exit codes and stderr are surfaced for native parity (**`exitError`**).
+- **Passthrough (default):** all other argv → **`DispatchDriver.CommandContext`** (native or wasm per peeled kind). With **`--backend=native`**, the subprocess exit code and stderr are surfaced unchanged (**`exitError`**). With wasm, a failed command returns an opaque error (go-exiftool-wasm exports no exit-code type); the wrapper prints it and exits **1**, so ExifTool exit status **2** (all files failed **`-if`**) is reported as **1**.
 - **Ingest defaults:** log level **`INFO`**; worker count **`runtime.NumCPU()`** (minimum 1).
 - **Database path:** **`$XDG_DATA_HOME/exiftool-go/exif.db`**, or **`~/.local/share/exiftool-go/exif.db`** when **`XDG_DATA_HOME`** is unset (**`internal/xdg`**).
 
@@ -99,7 +99,7 @@ flowchart TB
 
 - **`Server`**: stay_open session (**`Close`**, **`Command`**, **`Shutdown`**) — one **`NewServer` per worker** in **`internal/pipeline`** (hardcoded **`BackendWasm`** for ingest).
 - **`NativeDriver`**: forwards to ncruces; **`EXIFTOOL_GO_EXIFTOOL`** overrides the Perl driver path (otherwise **`exiftool`** on **`PATH`**).
-- **`WasmDriver`**: forwards to wasm; normalizes **warning-only** guest stderr on success paths to match ncruces **`exec`** success semantics.
+- **`WasmDriver`**: forwards to wasm unchanged. go-exiftool-wasm already returns a nil error when ExifTool exits 0 with warnings on stderr, matching ncruces **`exec`** semantics.
 
 ### Direct dependencies (root `go.mod`)
 

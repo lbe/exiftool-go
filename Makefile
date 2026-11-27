@@ -1,5 +1,10 @@
 .DEFAULT_GOAL := help
 
+# Packages for test targets. Override with: make test PKGS=./internal/pipeline
+PKGS ?= ./...
+# Extra go test flags. Example: make test ARGS="-count=1 -v -run TestFoo"
+ARGS ?=
+
 .PHONY: help build clean distclean test test-integration test-e2e test-all test-all-race cover fmt vet check golden-version golden-json golden-tree lint
 
 help:
@@ -19,28 +24,32 @@ help:
 	@echo "  golden-json      regen testdata/golden/json_samsung_sm_g930p.json"
 	@echo "  golden-tree      regen testdata/golden/tree_r_filename_sorted.stdout"
 	@echo "  lint             golangci-lint run  --max-same-issues 0 ./..."
+	@echo ""
+	@echo "Variables (test, test-integration, test-e2e, test-all, test-all-race, cover):"
+	@echo "  PKGS=<pkgs>      packages to test (default: $(PKGS))"
+	@echo "  ARGS=<flags>     extra go test flags, e.g. ARGS=\"-count=1 -v\""
 
 build:
 	mkdir -p bin
 	go build -v -o bin/exiftool-go ./cmd/exiftool-go
 
 test:
-	go test ./... -count=1 -cover
+	go test $(PKGS) -cover $(ARGS)
 
 test-integration:
-	go test -tags integration ./... -count=1
+	go test -tags integration $(PKGS) $(ARGS)
 
 test-e2e:
-	go test -tags e2e ./... -count=1
+	go test -tags e2e $(PKGS) $(ARGS)
 
 test-all:
-	go test -tags "integration,e2e" ./... -count=1 -cover
+	go test -tags "integration,e2e" $(PKGS) -cover $(ARGS)
 
 test-all-race:
-	go test -tags "integration,e2e" -race ./... -count=1
+	go test -tags "integration,e2e" -race $(PKGS) $(ARGS)
 
 cover:
-	go test -tags "integration,e2e" ./... -count=1 -coverprofile=coverage.out
+	go test -tags "integration,e2e" $(PKGS) -count=1 -coverprofile=coverage.out $(ARGS)
 	go tool cover -html=coverage.out -o coverage.html
 	go tool cover -func=coverage.out | tail -n 1
 	@echo "Coverage report: coverage.html"

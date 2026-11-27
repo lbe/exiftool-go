@@ -79,7 +79,7 @@ func TestRunIngestNoInputEmptyPipe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("os.Pipe: %v", err)
 	}
-	if err := w.Close(); err != nil {
+	if err = w.Close(); err != nil {
 		t.Fatalf("close write end: %v", err)
 	}
 	defer r.Close()

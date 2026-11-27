@@ -32,8 +32,8 @@ func TestWasmZeroByteFileJSONPassthrough(t *testing.T) {
 	}
 
 	var records []map[string]any
-	if err := json.Unmarshal(out, &records); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
+	if jsonErr := json.Unmarshal(out, &records); jsonErr != nil {
+		t.Fatalf("invalid JSON: %v", jsonErr)
 	}
 	if len(records) != 1 {
 		t.Fatalf("expected 1 record, got %d", len(records))

@@ -18,7 +18,6 @@ import (
 	"github.com/lbe/exiftool-go/internal/logging"
 	"github.com/lbe/exiftool-go/internal/pipeline"
 	"github.com/lbe/exiftool-go/internal/xdg"
-	wasmexif "github.com/lbe/go-exiftool-wasm"
 )
 
 const defaultLogLevel = "INFO"
@@ -99,10 +98,9 @@ func runForward(ctx context.Context, stdin io.Reader, args []string, kind backen
 	if err == nil {
 		return nil
 	}
-	var exitErr *wasmexif.ExitError
-	if errors.As(err, &exitErr) {
-		return exitError{code: exitErr.Code}
-	}
+	// The native backend returns *exec.ExitError. The wasm backend returns an
+	// opaque error (go-exiftool-wasm matches the ncruces/go-exiftool contract and
+	// exports no exit-code type); main reports it and exits 1.
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
 		return exitError{code: ee.ExitCode(), stderr: ee.Stderr}
